@@ -96,19 +96,19 @@ function Invoke-SqlPackage {
     param (
         [ValidateSet("Import", "Export", "Publish")]
         [string] $Action,
-        
+
         [string] $DatabaseServer,
-        
+
         [string] $DatabaseName,
-        
+
         [string] $SqlUser,
-        
+
         [string] $SqlPwd,
-        
+
         [string] $TrustedConnection,
-        
+
         [string] $FilePath,
-        
+
         [string[]] $Properties,
 
         [string] $DiagnosticFile,
@@ -128,12 +128,27 @@ function Invoke-SqlPackage {
 
         [switch] $EnableException
     )
-              
+
     $executable = $Script:SqlPackagePath
 
     Invoke-TimeSignal -Start
 
-    if (!(Test-PathExists -Path $executable -Type Leaf)) { return }
+    if (!(Test-PathExists -Path $executable -Type Leaf)){
+        try{
+            $envSqlPackage = (Get-Command -Name "sqlpackage.exe").Source
+            if (!(Test-PathExists -Path $envSqlPackage -Type Leaf)) { return }
+            else{
+                $executable = $envSqlPackage
+                Set-D365SqlPackagePath -Path $executable
+            }
+        }
+        catch
+        {
+            # SqlPackage.exe is not in $Script:SqlPackagePath
+            # and not in %PATH%, so
+            return
+        }
+    }
 
     Write-PSFMessage -Level Verbose -Message "Starting to prepare the parameters for sqlpackage.exe"
 
@@ -146,12 +161,12 @@ function Invoke-SqlPackage {
         $null = $Params.Add("/SourceTrustServerCertificate:True")
         $null = $Params.Add("/TargetFile:`"$FilePath`"")
         $null = $Params.Add("/Properties:CommandTimeout=0")
-    
+
         if (!$UseTrustedConnection) {
             $null = $Params.Add("/SourceUser:$SqlUser")
             $null = $Params.Add("/SourcePassword:$SqlPwd")
         }
-        
+
         Remove-Item -Path $FilePath -ErrorAction SilentlyContinue -Force
     }
     elseif ($Action -eq "import") {
@@ -161,7 +176,7 @@ function Invoke-SqlPackage {
         $null = $Params.Add("/TargetTrustServerCertificate:True")
         $null = $Params.Add("/SourceFile:`"$FilePath`"")
         $null = $Params.Add("/Properties:CommandTimeout=0")
-        
+
         if (!$UseTrustedConnection) {
             $null = $Params.Add("/TargetUser:$SqlUser")
             $null = $Params.Add("/TargetPassword:$SqlPwd")
@@ -174,7 +189,7 @@ function Invoke-SqlPackage {
         $Params.Add("/TargetTrustServerCertificate:True") > $null
         $Params.Add("/SourceFile:`"$FilePath`"") > $null
         $Params.Add("/Properties:CommandTimeout=0") > $null
-        
+
         if (-not $UseTrustedConnection) {
             $Params.Add("/TargetUser:$SqlUser") > $null
             $Params.Add("/TargetPassword:$SqlPwd") > $null
@@ -193,7 +208,7 @@ function Invoke-SqlPackage {
         $Params.Add("/Diagnostics:true") > $null
         $Params.Add("/DiagnosticsFile:`"$DiagnosticFile`"") > $null
     }
-    
+
     if ($ModelFile) {
         $Params.Add("/ModelFilePath:`"$ModelFile`"") > $null
     }
@@ -202,8 +217,12 @@ function Invoke-SqlPackage {
         $Params.Add("/MaxParallelism:$MaxParallelism") > $null
     }
 
+    $result = Invoke-Process -Path $executable -Params "/Version"
+    $version = $result.stdout -replace "`r`n", ""
+    Write-PSFMessage -Level Verbose -Message "Using SQLPackage version $version"
+
     Invoke-Process -Executable $executable -Params $params -ShowOriginalProgress:$ShowOriginalProgress -OutputCommandOnly:$OutputCommandOnly -LogPath $LogPath
-    
+
     if (Test-PSFFunctionInterrupt) {
         Write-PSFMessage -Level Critical -Message "The SqlPackage.exe exited with an error."
         Stop-PSFFunction -Message "Stopping because of errors." -StepsUpward 1

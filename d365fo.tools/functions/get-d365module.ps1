@@ -143,16 +143,13 @@ function Get-D365Module {
 
         Write-PSFMessage -Level Verbose -Message "MetadataProvider initialized." -Target $metadataProviderViaRuntime
 
-        $modelManifest = $metadataProviderViaRuntime.ModelManifest
-
-        if ($InDependencyOrder -eq $true) {
-            $modules = $modelManifest.ListModulesInDependencyOrder()
-        }
-        else {
-            $modules = $modelManifest.ListModules()
+        try {
+            $modules = $metadataProviderViaRuntime.ModelManifest.ListModulesInDependencyOrder()
+        } catch {
+            Write-PSFMessage -Level Warning -Message "Failed to retrieve runtime modules in dependency order. Falling back to ListModules()." -Target $metadataProviderViaRuntime
+            $modules = $metadataProviderViaRuntime.ModelManifest.ListModules()
         }
 
-        
         $modules | ForEach-Object {
             $_ | Add-Member -MemberType NoteProperty -Name 'IsBinary' -Value $false
         }
@@ -165,17 +162,34 @@ function Get-D365Module {
             $diskProviderConfiguration = New-Object Microsoft.Dynamics.AX.Metadata.Storage.DiskProvider.DiskProviderConfiguration
             $diskProviderConfiguration.AddMetadataPath($PackageDirectory)
             $metadataProviderFactoryViaDisk = New-Object Microsoft.Dynamics.AX.Metadata.Storage.MetadataProviderFactory
-            $metadataProviderViaDisk = $metadataProviderFactoryViaDisk.CreateDiskProvider($diskProviderConfiguration)
+            $metadataProviderViaDisk = $metadataProviderFactoryViaDisk.CreateDiskProvider($diskProviderConfiguration, $metadataProviderViaRuntime.ModelManifest)
 
             Write-PSFMessage -Level Verbose -Message "MetadataProvider initialized." -Target $metadataProviderViaDisk
 
-            $diskModules = $metadataProviderViaDisk.ModelManifest.ListModules()
+            try {
+                $diskModules = $metadataProviderViaDisk.ModelManifest.ListModulesInDependencyOrder()
+            } catch {
+                Write-PSFMessage -Level Warning -Message "Failed to retrieve disk modules in dependency order. Falling back to ListModules()." -Target $metadataProviderViaDisk
+                $diskModules = $metadataProviderViaDisk.ModelManifest.ListModules()
+            }
 
-            foreach($module in $modules) {
+            foreach ($module in $modules) {
                 if ($diskModules.Name -NotContains $module.Name) {
                     $module.IsBinary = $true
                 }
             }
+            
+            $uncompiledModules = @(
+                foreach ($module in $diskModules) {
+                    if ($modules.Name -NotContains $module.Name) {
+                        $module | Add-Member -MemberType NoteProperty -Name 'IsBinary' -Value $false
+                        $module
+                    }
+                }
+            )
+
+            # Combined both arrays
+            $modules = $modules + $uncompiledModules
         }
 
         if ($ExcludeBinaryModules -eq $true) {
@@ -195,9 +209,9 @@ function Get-D365Module {
             $moduleName = $obj.Name
 
             $res = [Ordered]@{
-                Module = $moduleName
+                Module     = $moduleName
                 ModuleName = $moduleName
-                IsBinary = $obj.IsBinary
+                IsBinary   = $obj.IsBinary
                 PSTypeName = 'D365FO.TOOLS.ModuleInfo'
             }
 

@@ -21,6 +21,8 @@ $Script:WebConfig = "web.config"
 
 $Script:DevConfig = "DynamicsDevConfig.xml"
 
+$Script:WifConfig = "wif.config"
+
 $Script:WifServicesConfig = "wif.services.config"
 
 $Script:Hosts = 'C:\Windows\System32\drivers\etc\hosts'
@@ -65,7 +67,7 @@ if ($environment.Infrastructure.HostName -like "*cloud.onebox.dynamics.com*") {
     $Script:EnvironmentType = [EnvironmentType]::LocalHostedTier1
     $Script:CanUseTrustedConnection = $true
 }
-elseif ($environment.Infrastructure.HostName -like "*cloudax.dynamics.com*") {
+elseif ($environment.Infrastructure.HostName -match "(cloudax|axcloud).*dynamics.com") {
     $Script:EnvironmentType = [EnvironmentType]::AzureHostedTier1
     $Script:CanUseTrustedConnection = $true
 }
@@ -73,7 +75,7 @@ elseif ($environment.Infrastructure.HostName -like "*sandbox.ax.dynamics.com*") 
     $Script:EnvironmentType = [EnvironmentType]::MSHostedTier1
     $Script:CanUseTrustedConnection = $true
 }
-elseif ($environment.Infrastructure.HostName -like "*sandbox.operations.dynamics.com*") {
+elseif ($environment.Infrastructure.HostName -like "*sandbox.operations.*dynamics.com*") {
     $Script:EnvironmentType = [EnvironmentType]::MSHostedTier2
 }
 
@@ -91,6 +93,25 @@ $RegSplat = @{
 
 $RegValue = $( if (Test-RegistryValue @RegSplat) { Join-Path (Get-ItemPropertyValue @RegSplat) "InstallationRecords" } else { "" } )
 $Script:InstallationRecordsDir = $RegValue
+
+# On a local VHD, the information about the installed service models may not be available.
+# As a fallback, this list of known service model names may be used.
+$Script:FallbackInstallationServiceModelNames = @(
+    "ALMService",
+    "AOSService",
+    "BIService",
+    "DevToolsService",
+    "DIXFService",
+    "MROneBox",
+    "PayrollTaxModule",
+    "PerfSDK",
+    "ReportingService",
+    "RetailCloudPos",
+    "RetailHQConfiguration",
+    "RetailSDK",
+    "RetailSelfService",
+    "RetailServer"
+)
 
 $Script:UserIsAdmin = $env:UserName -like "*admin*"
 
